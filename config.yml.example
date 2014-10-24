@@ -1,0 +1,17 @@
+---
+twitter:
+    consumer_key: ""
+    consumer_secret: ""
+    oauth_token: ""
+    oauth_token_secret: ""
+
+    search: ""
+    accounts_to_follow: 1
+    sleep_between_follow: 3.0
+    sleep_between_unfollow: 3.0
+
+redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    namespace: ""
