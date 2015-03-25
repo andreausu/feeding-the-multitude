@@ -22,18 +22,55 @@ client = Twitter::REST::Client.new do |config|
   config.access_token_secret = CONFIG['twitter']['oauth_token_secret']
 end
 
-two_days_ago = (Time.now - (2 * 24 * 60 * 60)).to_i.to_f
-#two_days_ago = Time.now.to_i.to_f
+some_time_ago = (Time.now - (CONFIG['twitter']['minutes_after_unfollow'] * 60)).to_i.to_f
 
 redis = Redis.new(:host => CONFIG['redis']['host'], :port => CONFIG['redis']['port'], :db => CONFIG['redis']['db'])
 
 to_unfollow = []
-to_unfollow = redis.zrangebyscore("#{CONFIG['redis']['namespace']}:ftm:followed_to_check", "-inf", two_days_ago)
+to_unfollow = redis.zrangebyscore("#{CONFIG['redis']['namespace']}:ftm:followed_to_check", "-inf", some_time_ago)
 
-my_followers = client.follower_ids.to_a unless to_unfollow.length == 0
+options = {:count => 200}
+result = []
+favorites = []
+last_id = 0
+old_last_id = 0
+loop do
+  begin
+    options[:max_id] = last_id if last_id > 0
+    result = client.favorites(options).to_a
+    favorites += result
+    puts favorites.length
+    result.each { |res| last_id = res.id if res.id < last_id || last_id == 0 }
+    break if old_last_id == last_id
+    old_last_id = last_id
+  rescue Twitter::Error::TooManyRequests => error
+    puts "Too many requests! Sleeping for #{error.rate_limit.reset_in} seconds..."
+    sleep error.rate_limit.reset_in
+    retry
+  end
+end
+
+my_followers = client.follower_ids.to_a
+my_following = client.friend_ids.to_a
 
 sleep_seconds = CONFIG['twitter']['sleep_between_unfollow']
 sleep_margin = (sleep_seconds * 15 / 100).abs
+
+favorites.each do |favorite|
+  if my_followers.include? favorite.user.id or my_following.include? favorite.user.id
+    puts "We follow this user! #{favorite.user.id}"
+  else
+    begin
+      client.unfavorite(favorite.id)
+      puts "Unfavorited #{favorite.id}"
+      actual_sleep = rand((sleep_seconds - sleep_margin)...(sleep_seconds + sleep_margin))
+      puts "Sleeping for #{actual_sleep} seconds..."
+      sleep actual_sleep
+    rescue Twitter::Error::NotFound
+      puts "Tweet #{favorite.id} not found!"
+    end
+  end
+end
 
 to_unfollow.each do |user|
   user = JSON.parse(user)
@@ -44,7 +81,7 @@ to_unfollow.each do |user|
       actual_sleep = rand((sleep_seconds - sleep_margin)...(sleep_seconds + sleep_margin))
       puts "Sleeping for #{actual_sleep} seconds..."
       sleep actual_sleep
-    rescue Twitter::Error::NotFound => error
+    rescue Twitter::Error::NotFound
       puts "User @#{user['screen_name']} (ID: #{user['id'].to_s}) not found!"
     end
   else
@@ -52,6 +89,4 @@ to_unfollow.each do |user|
   end
 end
 
-redis.zremrangebyscore("#{CONFIG['redis']['namespace']}:ftm:followed_to_check", '-inf', two_days_ago)
-
-#puts client.get('/1.1/application/rate_limit_status.json')[:body]
+redis.zremrangebyscore("#{CONFIG['redis']['namespace']}:ftm:followed_to_check", '-inf', some_time_ago)

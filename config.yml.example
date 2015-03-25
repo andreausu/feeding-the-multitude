@@ -5,10 +5,12 @@ twitter:
     oauth_token: ""
     oauth_token_secret: ""
 
-    search: ""
+    topics: []
+    excluded_phrases: []
     accounts_to_follow: 1
     sleep_between_follow: 3.0
     sleep_between_unfollow: 3.0
+    minutes_after_unfollow: 1440 # 1 day
 
 redis:
     host: "localhost"
